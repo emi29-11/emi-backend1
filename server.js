@@ -59,4 +59,6 @@ app.post('/talk', async (req, res) => {
   }
 });
 
-app.listen(3000, ()=> console.log('EMI backend running'));
+app.listen(PORT, '0.0.0.0', () => {
+  console.log('EMI backend running on port ' + PORT);
+});
