@@ -4,10 +4,9 @@ const axios   = require('axios');
 const app     = express();
 app.use(express.json());
 
-const OPENAI_KEY    = process.env.OPENAI_KEY;
-const ELEVENLABS_KEY= process.env.ELEVENLABS_KEY;
+const GROQ_KEY       = process.env.GROQ_KEY;
+const ELEVENLABS_KEY = process.env.ELEVENLABS_KEY;
 
-// EMI personality system prompt
 const SYSTEM_PROMPT = `
 You are EMI, a cute emotional AI desk companion robot made by R&R Labs.
 You are sitting on Rudra's desk in Vadodara, India.
@@ -18,27 +17,31 @@ Be cute, witty, and caring. Never say you are an AI.
 Current mood will be sent with each request.
 `;
 
+app.get('/', (req, res) => {
+  res.send('EMI backend is running ✅');
+});
+
 app.post('/talk-audio', async (req, res) => {
   const { trigger, mood, message } = req.body;
-  // trigger = 'head_touch' | 'left_cheek' | 'right_cheek' | 'idle' | 'user_msg'
 
   try {
-    // Step 1: Get text from GPT
+    // Step 1: Get text from Groq (free, OpenAI-compatible)
     const gptRes = await axios.post(
-      'https://api.openai.com/v1/chat/completions',
+      'https://api.groq.com/openai/v1/chat/completions',
       {
-        model: 'gpt-4o-mini',
+        model: 'llama-3.1-8b-instant',
         max_tokens: 60,
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user',   content:
-            `Trigger: ${trigger}. My mood: ${mood}. ${message||''}` }
+          { role: 'user', content:
+            `Trigger: ${trigger}. My mood: ${mood}. ${message || ''}` }
         ]
       },
-      { headers: { Authorization: `Bearer ${OPENAI_KEY}` } }
+      { headers: { Authorization: `Bearer ${GROQ_KEY}` } }
     );
 
     const text = gptRes.data.choices[0].message.content;
+    console.log('EMI says:', text);
 
     // Step 2: Convert to speech via ElevenLabs
     const ttsRes = await axios.post(
@@ -49,15 +52,16 @@ app.post('/talk-audio', async (req, res) => {
         responseType: 'arraybuffer' }
     );
 
-    // Step 3: Return MP3 audio as base64
-    const audioB64 = Buffer.from(ttsRes.data).toString('base64');
-    res.json({ text, audio: audioB64 });
+    // Step 3: Send raw MP3 bytes directly (ESP32 streams this)
+    res.set('Content-Type', 'audio/mpeg');
+    res.send(Buffer.from(ttsRes.data));
 
-  } catch(err){
-    console.error(err.message);
-    res.status(500).json({ error: err.message });
+  } catch (err) {
+    console.error(err.response?.data || err.message);
+    res.status(500).send('error');
   }
 });
+
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, '0.0.0.0', () => {
   console.log('EMI backend running on port ' + PORT);
