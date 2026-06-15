@@ -18,7 +18,7 @@ Be cute, witty, and caring. Never say you are an AI.
 Current mood will be sent with each request.
 `;
 
-app.post('/talk', async (req, res) => {
+app.post('/talk-audio', async (req, res) => {
   const { trigger, mood, message } = req.body;
   // trigger = 'head_touch' | 'left_cheek' | 'right_cheek' | 'idle' | 'user_msg'
 
