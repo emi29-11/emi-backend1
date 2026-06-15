@@ -56,8 +56,12 @@ app.post('/talk-audio', async (req, res) => {
     res.set('Content-Type', 'audio/mpeg');
     res.send(Buffer.from(ttsRes.data));
 
-  } catch (err) {
-    console.error(err.response?.data || err.message);
+  } } catch (err) {
+    if (err.response && err.response.data) {
+      console.error('ERROR FROM API:', Buffer.from(err.response.data).toString());
+    } else {
+      console.error('ERROR:', err.message);
+    }
     res.status(500).send('error');
   }
 });
