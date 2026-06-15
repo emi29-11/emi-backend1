@@ -58,7 +58,7 @@ app.post('/talk', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
+const PORT = process.env.PORT || 8080;
 app.listen(PORT, '0.0.0.0', () => {
   console.log('EMI backend running on port ' + PORT);
 });
