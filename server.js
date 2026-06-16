@@ -3,8 +3,7 @@ const express = require('express');
 const axios   = require('axios');
 const app     = express();
 app.use(express.json());
-const GROQ_KEY       = process.env.GROQ_KEY;
-const ELEVENLABS_KEY = process.env.ELEVENLABS_KEY;
+const GROQ_KEY = process.env.GROQ_KEY;
 const SYSTEM_PROMPT = `
 You are EMI, a cute emotional AI desk companion robot made by R&R Labs.
 You are sitting on Rudra's desk in Vadodara, India.
@@ -36,17 +35,31 @@ app.post('/talk-audio', async (req, res) => {
     );
     const text = gptRes.data.choices[0].message.content;
     console.log('EMI says:', text);
-    // Step 2: Convert to speech via ElevenLabs
-    const ttsRes = await axios.post(
-      'https://api.elevenlabs.io/v1/text-to-speech/pNInz6obpgDQGcFmaJgB',
-      { text, model_id: 'eleven_multilingual_v2',
-        voice_settings: { stability: 0.5, similarity_boost: 0.8 } },
-      { headers: { 'xi-api-key': ELEVENLABS_KEY },
-        responseType: 'arraybuffer' }
+
+    // Step 2: Convert to speech via Google Translate TTS (free)
+    // Limit text to 200 chars (API limitation)
+    const ttsText = text.substring(0, 200);
+
+    const ttsRes = await axios.get(
+      'https://translate.google.com/translate_tts',
+      {
+        params: {
+          ie: 'UTF-8',
+          q: ttsText,
+          tl: 'hi',
+          client: 'tw-ob'
+        },
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        },
+        responseType: 'arraybuffer'
+      }
     );
+
     // Step 3: Send raw MP3 bytes directly (ESP32 streams this)
     res.set('Content-Type', 'audio/mpeg');
     res.send(Buffer.from(ttsRes.data));
+
   } catch (err) {
     if (err.response && err.response.data) {
       console.error('ERROR FROM API:', Buffer.from(err.response.data).toString());
