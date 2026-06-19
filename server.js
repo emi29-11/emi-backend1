@@ -1,6 +1,7 @@
 // server.js — EMI Backend
 const express = require('express');
 const axios   = require('axios');
+const { spawn } = require('child_process');
 const app     = express();
 app.use(express.json());
 
@@ -20,10 +21,34 @@ app.get('/', (req, res) => {
   res.send('EMI backend is running ✅');
 });
 
-// Shared logic used by both GET and POST
+// Convert MP3 buffer to WAV buffer (16-bit PCM, mono, 22050Hz) using ffmpeg
+function mp3ToWav(mp3Buffer) {
+  return new Promise((resolve, reject) => {
+    const ffmpeg = spawn('ffmpeg', [
+      '-i', 'pipe:0',
+      '-f', 'wav',
+      '-ar', '22050',
+      '-ac', '1',
+      '-acodec', 'pcm_s16le',
+      'pipe:1'
+    ]);
+
+    const chunks = [];
+    ffmpeg.stdout.on('data', (chunk) => chunks.push(chunk));
+    ffmpeg.stderr.on('data', () => {}); // suppress ffmpeg logs
+    ffmpeg.on('close', (code) => {
+      if (code === 0) resolve(Buffer.concat(chunks));
+      else reject(new Error('ffmpeg exited with code ' + code));
+    });
+    ffmpeg.on('error', reject);
+
+    ffmpeg.stdin.write(mp3Buffer);
+    ffmpeg.stdin.end();
+  });
+}
+
 async function generateAndSendAudio(trigger, mood, message, res) {
   try {
-    // Step 1: Get text from Groq
     const gptRes = await axios.post(
       'https://api.groq.com/openai/v1/chat/completions',
       {
@@ -41,40 +66,29 @@ async function generateAndSendAudio(trigger, mood, message, res) {
     const text = gptRes.data.choices[0].message.content;
     console.log('EMI says:', text);
 
-    // Step 2: Convert to speech via Google Translate TTS
     const ttsText = text.substring(0, 200);
 
     const ttsRes = await axios.get(
       'https://translate.google.com/translate_tts',
       {
-        params: {
-          ie: 'UTF-8',
-          q: ttsText,
-          tl: 'hi',
-          client: 'tw-ob'
-        },
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        },
+        params: { ie: 'UTF-8', q: ttsText, tl: 'hi', client: 'tw-ob' },
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
         responseType: 'arraybuffer'
       }
     );
 
-    // Step 3: Send raw MP3 bytes directly
-    res.set('Content-Type', 'audio/mpeg');
-    res.send(Buffer.from(ttsRes.data));
+    const mp3Buffer = Buffer.from(ttsRes.data);
+    const wavBuffer = await mp3ToWav(mp3Buffer);
+
+    res.set('Content-Type', 'audio/wav');
+    res.send(wavBuffer);
 
   } catch (err) {
-    if (err.response && err.response.data) {
-      console.error('ERROR FROM API:', Buffer.from(err.response.data).toString());
-    } else {
-      console.error('ERROR:', err.message);
-    }
+    console.error('ERROR:', err.message);
     res.status(500).send('error');
   }
 }
 
-// NEW: GET route — used by ESP32 (AudioFileSourceHTTPStream only does GET)
 app.get('/talk-audio', async (req, res) => {
   const trigger = req.query.trigger || 'idle';
   const mood    = req.query.mood || 'normal';
@@ -82,7 +96,6 @@ app.get('/talk-audio', async (req, res) => {
   await generateAndSendAudio(trigger, mood, message, res);
 });
 
-// OLD: POST route — kept for Postman/manual testing
 app.post('/talk-audio', async (req, res) => {
   const { trigger, mood, message } = req.body;
   await generateAndSendAudio(trigger, mood, message, res);
